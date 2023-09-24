@@ -1,0 +1,267 @@
+---
+title: " "
+author: " "
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    number_sections: false
+    theme: flatly
+    output:
+      html_document:
+       code_folding: hide
+    
+---
+
+
+<style type="text/css">
+div.main-container {
+  max-width: 90%;
+  margin-left: 2px;
+  /margin-right;/
+}
+</style>
+
+<style>
+#para1{
+  color: grey;
+  text-align: left;}
+#text{
+  text-align:left;
+  padding:10px;
+  float:both;
+}
+#links{
+color:#facf02;
+}
+</style>
+
+<div id="text">
+
+```{r}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(bootstrap)
+library(bslib)
+library(dplyr)
+library(DT)
+library(cowplot)
+library(gifski)
+library(gganimate)
+library(ggplot2)
+library(googlesheets4)
+library(installr)
+library(janitor)
+library(knitr)
+library(leaflet)
+library(leaflet.extras)
+library(lubridate)
+library(maptools)
+library(openxlsx)
+library(plotly)
+library(readxl)
+library(rgdal)
+library(rgeos)
+library(rmarkdown)
+library(rsconnect)
+library(scales)
+library(sf)
+#library(shiny)
+#library(shinydashboard)
+#library(shinyjs)
+library(sodium)
+library(stringr)
+library(tidyr)
+library(tidyverse)
+library(viridis)
+library(viridisLite)
+library(writexl)
+
+#options(scipen = 999)
+```
+
+<h1>
+  INSTRUMENTOS DE ANALISIS URBANO II </br>
+  <small class="text-muted"> || Ángeles Suarez Anzorena </small>
+</h1>
+
+<h2>
+  00-Datos Base </br>
+  <small class="text-muted"> | Carga y exploración de los datasets </small>
+</h2>
+
+
+```{r , include=FALSE}
+
+
+caba <- st_read("00-data/caba/caba.shp",
+                       stringsAsFactors= TRUE,
+                       options = "ENCODING=latin1") %>% 
+                       clean_names() %>% 
+                       st_transform(4326)
+
+riesgo <- st_read("00-data/riesgo_puntos.shp",
+                       stringsAsFactors= TRUE,
+                       options = "ENCODING=latin1") %>% 
+                       clean_names()%>% 
+                       st_transform(4326)
+
+riesgo2 = st_read("00-data/riesgo_lineas.shp",
+                       stringsAsFactors= TRUE,
+                       options = "ENCODING=latin1") %>% 
+                       clean_names()%>% 
+                       st_transform(4326)
+
+
+barrios = read.csv("00-data/2023-09-20_info_publica.csv",
+                     stringsAsFactors = TRUE,
+                     #sep = ";",
+                     encoding = "UTF-8") %>% 
+                     clean_names() %>% 
+                     st_as_sf(wkt = "geometry", crs = 4326)
+
+desocupacion = read.csv("00-data/tasa-de-desocupacion-por-aglomerado-1974-2003.csv",
+                     stringsAsFactors = TRUE,
+                     #sep = ";",
+                     encoding = "UTF-8") %>% 
+                     clean_names() 
+
+barrios_v = st_read("00-data/barrios_vulnerables.shp",
+                       stringsAsFactors= TRUE,
+                       options = "ENCODING=latin1") %>% 
+                       clean_names()%>% 
+                       st_transform(4326)
+
+callejero_ppal = st_read("00-data/callejero_ppal/callejero_ppal.shp",
+                       stringsAsFactors= TRUE,
+                       options = "ENCODING=latin1") %>% 
+                       clean_names()%>% 
+                       st_transform(4326)
+
+vias_ffcc = st_read("00-data/AMBA_vias_ffcc.shp",
+                       stringsAsFactors= TRUE,
+                       options = "UTF-8") %>% 
+                       clean_names()%>% 
+                       st_transform(4326)
+                     
+```
+
+
+
+
+##CREACION BARRIOS
+
+<h2>
+  01-Creación de Barrios </br>
+  <small class="text-muted"> | Barrios originados por década </small>
+</h2>
+
+```{r}
+barrios = barrios %>% 
+         filter(provincia == "Ciudad Autónoma de Buenos Aires")
+
+primero_sin_na = function(variable){
+                variable[!is.na(variable)][1]
+}
+
+barrios_caba = st_join(barrios_v, barrios) %>% 
+  group_by(nombre) %>%
+  summarize(geometry = st_union(geometry),
+            provincia = first(provincia),
+            decada_de_creacion = primero_sin_na(decada_de_creacion),
+            id_renabap = primero_sin_na(id_renabap),
+            cantidad_viviendas_aproximadas = sum(cantidad_viviendas_aproximadas),
+            cantidad_familias_aproximada = sum(cantidad_familias_aproximada),
+            superficie_m2 = sum(superficie_m2)
+            ) %>%
+  ungroup() %>% 
+  mutate(decada_de_creacion = str_replace(decada_de_creacion, "Década ", "")
+         ) %>% 
+  st_make_valid(barrios_caba)
+
+ggplot(barrios_caba, aes(x = decada_de_creacion)) +
+  geom_bar() +
+  labs(x = "Años", y = "Cantidad de barrios") +
+  ggtitle("Barrios informales originados por década")+
+  theme_light()
+```
+
+
+<h2>
+  02-Barreras Urbanas </br>
+  <small class="text-muted"> | Barrios y su contexto </small>
+</h2>
+
+
+```{r}
+vias_ffcc = st_intersection(vias_ffcc, caba)
+
+ggplot()+
+  geom_sf(data=callejero_ppal, fill=NA, color="grey")+
+  geom_sf(data=vias_ffcc, fill=NA, color="black")+
+  geom_sf(data=barrios_caba, aes(color=decada_de_creacion))+
+  theme_light()
+  
+```
+
+
+<h2>
+  03-Riesgo </br>
+  <small class="text-muted"> | Proximidad a factores de riesgo </small>
+</h2>
+
+```{r}
+barrios_buffer <- st_buffer(barrios_caba, dist = 1500)
+
+riesgo2 = st_filter(riesgo2, barrios_buffer)
+riesgo =  st_filter(riesgo, barrios_buffer)
+```
+
+
+```{r}
+barrios_caba <- barrios_caba %>%
+  st_cast("MULTIPOLYGON")
+
+leaflet(st_zm(barrios_caba) %>% st_transform(4326)) %>%
+  addTiles() %>%
+  #setView(lat=-34.5828, lng=-58.3792,zoom=16)%>%
+  addProviderTiles(providers$CartoDB.Positron, group = "OSM",
+                   options = providerTileOptions(minzoom = 1, maxzoom = 15)) %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Satelite") %>%
+  addLayersControl(
+    baseGroups = c("OSM","Satelite"), 
+    overlayGroups = c("Barrios","Riesgo", "Riesgo2"))%>% 
+    
+  
+  addPolygons(data = (st_zm(barrios_caba) %>% st_transform(4326)),
+              fillColor = "white",
+              weight = 0.5,
+              color = "black",
+              fillOpacity = 0.5,
+              popup = barrios_caba$nombre,
+              group = "Barrios") %>%
+  
+  addPolylines(data = (st_zm(riesgo2)%>% st_transform(4326)),
+               color = "red",
+               weight = 4,
+               opacity = 0.2,
+               popup = riesgo2_barr$valor,
+               group = "Riesgo2")%>%
+  
+   addCircleMarkers(data = (st_zm(riesgo)%>% st_transform(4326)),
+               color = "red",
+               radius = 0.03,
+               weight = 0.5,
+               opacity = 1,
+               popup = riesgo$valor,
+               group = "Riesgo") %>% 
+  
+    addResetMapButton() 
+```
+
